@@ -1,0 +1,83 @@
+# This is the program to quantify nuclear to cytoplasmic ratio of Mond::Venus
+# x = DAPI
+# y = Venus
+
+kern <- makeBrush(3, shape="diamond")
+kern2 <- makeBrush(21, shape="diamond")
+kern3 <- makeBrush(9, shape="diamond")
+kern4 <- makeBrush(21, shape="diamond")
+rmask <- NULL
+output <- NULL
+mask_number <- 0
+
+fatbodyAnalysis <- function(x, y){
+  gauss <- gblur(x, 12, radius=2*ceiling(3*12)+1)
+  blur <- x - gauss
+  mask1 <- blur > max(blur)/6
+  mask2 <- fillHull(mask1)
+  label_mask2 <- bwlabel(mask2)
+  for(var1 in 1: max(label_mask2)){ 
+    coord <- which(label_mask2 == var1, arr.ind=TRUE)
+    for(var2 in 1: nrow(coord)){
+      xy <- coord[var2,  ]
+      if((xy[1] == 1) || (xy[1] == 1360) || (xy[2] == 1) || (xy[2] == 1024)){
+        rmask <- append(rmask, var1)
+        break} 
+    }
+  }
+  mask3 <- rmObjects(label_mask2, rmask)
+  unlabel_mask3 <- mask3 > 0
+  label_mask3 <- bwlabel(unlabel_mask3)
+  area_mask3 <- computeFeatures.shape(label_mask3)[,1]
+  d900 <- which(area_mask3 < 900)
+  mask4 <- rmObjects(label_mask3, d900)
+  unlabel_mask4 <- mask4 > 0
+  erode_mask4 <- erode(unlabel_mask4, kern)
+  mask5 <- erode(erode_mask4, kern)
+  nuclear_edge <- erode_mask4 - mask5
+  writeImage(nuclear_edge, file="nucler edge.tif")
+  mask8 <- erode(erode_mask4, kern2)
+  inner_mask <- erode_mask4 - mask8
+  writeImage(inner_mask, file="inner_mask.tif")
+  dilate_mask4 <- dilate(erode_mask4, kern3)
+  dilate2_mask4 <- dilate(erode_mask4, kern4)
+  writeImage(dilate2_mask4, file="cell_mask.tif")
+  mask10 <- dilate2_mask4 - dilate_mask4
+  label_mask10 <- bwlabel(mask10)
+  area_mask10 <- computeFeatures.shape(label_mask10)[,1]
+  d500 <- which(area_mask10 < 500)
+  outer_mask <- rmObjects(label_mask10, d500)
+  writeImage(outer_mask, file="outer_mask.tif")
+  label_cell <- bwlabel(dilate2_mask4)
+  label_inner <- bwlabel(inner_mask)
+  label_outer <- bwlabel(outer_mask)
+  inner_means <- computeFeatures.basic(label_inner, y)[,1]
+  outer_means <- computeFeatures.basic(label_outer, y)[,1]
+  for(var2 in 1:max(label_cell)){
+    coord <- which(label_cell == var2, arr.ind=TRUE)
+    for(var3 in 1: nrow(coord)){
+      xy <- coord[var3,  ]
+      xy_inner <- label_inner[xy[1], xy[2]]
+      if(xy_inner > 0){
+        inner_intensity <- inner_means[xy_inner]
+        break
+      }
+    }
+    for(var4 in 1:nrow(coord)){
+      xy <- coord[var4, ]
+      xy_outer <- label_outer[xy[1], xy[2]]
+      if(xy_outer > 0){
+        outer_intensity <- outer_means[xy_outer]
+        break
+      }
+    }
+    mask_number <- mask_number + 1
+    ratio <- inner_intensity/outer_intensity
+    data_set <- c(mask_number, inner_intensity, outer_intensity, ratio)
+    myname <- c("Mask number", "Nuclear signal", "Cytoplasmic signal", "N/C ratio")
+    names(data_set) <- myname
+    output <- rbind(output, data_set)
+  }
+  write.csv(output, file="output.csv")
+  return(output)
+}
